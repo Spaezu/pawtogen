@@ -1,9 +1,12 @@
+# Pawtogen.py
 import sys
 import time
 import threading
 import pyautogui
 import keyboard
 import os
+# FIX: Import pydirectinput for better game compatibility
+import pydirectinput 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
                             QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, 
                             QSpinBox, QRadioButton, QButtonGroup, QGroupBox, QGridLayout,
@@ -65,6 +68,7 @@ class ModernGroupBox(QGroupBox):
             }
         """)
 
+# FIX: Modified ClickerThread for better responsiveness and error handling
 class ClickerThread(QThread):
     def __init__(self, parent=None):
         super(ClickerThread, self).__init__(parent)
@@ -78,27 +82,36 @@ class ClickerThread(QThread):
         self.running = True
         self.current_count = 0
         
-        while self.running:
-            self.current_count += 1
+        try:
+            while self.running:
+                self.current_count += 1
+                    
+                if self.button == "left":
+                    if self.click_type == "single":
+                        pyautogui.click()
+                    else:
+                        pyautogui.doubleClick()
+                else:  # right button
+                    if self.click_type == "single":
+                        pyautogui.rightClick()
+                    else:
+                        pyautogui.doubleClick(button='right')
                 
-            if self.button == "left":
-                if self.click_type == "single":
-                    pyautogui.click()
-                else:
-                    pyautogui.doubleClick()
-            else:  # right button
-                if self.click_type == "single":
-                    pyautogui.rightClick()
-                else:
-                    pyautogui.doubleClick(button='right')
-            
-            time.sleep(self.interval)
+                # FIX: Sleep in smaller increments to be more responsive to stop() signal
+                sleep_time = self.interval
+                while sleep_time > 0 and self.running:
+                    time_to_sleep = min(0.1, sleep_time)  # Sleep in 0.1s increments
+                    time.sleep(time_to_sleep)
+                    sleep_time -= time_to_sleep
+        except Exception as e:
+            print(f"Error in ClickerThread: {e}")
         
         self.running = False
 
     def stop(self):
         self.running = False
 
+# FIX: Modified KeyboardThread for better responsiveness and game compatibility
 class KeyboardThread(QThread):
     def __init__(self, parent=None):
         super(KeyboardThread, self).__init__(parent)
@@ -111,10 +124,20 @@ class KeyboardThread(QThread):
         self.running = True
         self.current_count = 0
         
-        while self.running:
-            self.current_count += 1
-            pyautogui.press(self.key)
-            time.sleep(self.interval)
+        try:
+            while self.running:
+                self.current_count += 1
+                # FIX: Use pydirectinput for better game compatibility
+                pydirectinput.press(self.key)
+                
+                # FIX: Sleep in smaller increments to be more responsive to stop() signal
+                sleep_time = self.interval
+                while sleep_time > 0 and self.running:
+                    time_to_sleep = min(0.1, sleep_time)  # Sleep in 0.1s increments
+                    time.sleep(time_to_sleep)
+                    sleep_time -= time_to_sleep
+        except Exception as e:
+            print(f"Error in KeyboardThread: {e}")
         
         self.running = False
 
@@ -229,6 +252,27 @@ class PawtogenApp(QMainWindow):
         self.apply_theme("Default")
         self.setup_hotkeys()
         
+    # FIX: Added closeEvent method to properly clean up resources when closing the application
+    def closeEvent(self, event):
+        # Clean up threads
+        if self.clicker_thread.isRunning():
+            self.clicker_thread.stop()
+            self.clicker_thread.wait()
+        
+        if self.keyboard_thread.isRunning():
+            self.keyboard_thread.stop()
+            self.keyboard_thread.wait()
+        
+        if self.hotkey_detector.isRunning():
+            self.hotkey_detector.stop()
+            self.hotkey_detector.wait()
+        
+        # Unhook all keyboard hotkeys
+        keyboard.unhook_all()
+        
+        # Accept the close event
+        event.accept()
+    
     def set_app_icon(self):
         # Try to load icon.png from the same directory as the script
         try:
